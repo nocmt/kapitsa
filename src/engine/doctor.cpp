@@ -54,7 +54,8 @@ uint64_t ram_bytes() {
 // The automatic expert store `kapitsa serve` will pick for a Q2_0 Flash-Next pack (Qwen4Exp::init_store with
 // NI_EXPERT_STORE unset), before any load: the model's budget (flash_next_model_budget) less its GPU memory before the
 // store (the plan's weights without the smallest store, MTP head and prefill buffers) and init_store's 0.5 GB, then
-// q20::auto_store_size with this Mac's available memory now and its chip's RAM-share cap.
+// q20::auto_store_size with this Mac's available memory now, its chip's RAM-share cap and the KV reserve serve's
+// init_store passes (the same NI_EXPERT_KV_POS).
 q20::AutoStoreIn planned_store(const MemPlan& m, int slots, int ctx, size_t budget, bool apple10) {
   q20::AutoStoreIn in;
   const size_t mb = flash_next_model_budget(m, slots, ctx, budget);
@@ -63,6 +64,7 @@ q20::AutoStoreIn planned_store(const MemPlan& m, int slots, int ctx, size_t budg
   in.keep = size_t(1) << 29;
   in.left = mb > in.used + in.keep ? mb - in.used - in.keep : 0;
   in.ram = size_t(ram_bytes()), in.avail = q20::available_memory();
+  in.kv = q20::auto_store_kv(m.kv_per_pos);
   in.cap = q20::auto_store_cap(apple10);
   return in;
 }
@@ -483,6 +485,7 @@ int run_doctor(int argc, char** argv) {
                    {"slots", sp.slots},
                    {"budget_leaves_bytes", in.left},
                    {"available_memory_bytes", in.avail},
+                   {"kv_reserve_bytes", in.kv},
                    {"ram_share_cap", in.cap},
                    {"text", store_line}};
       }
