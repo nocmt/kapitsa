@@ -55,7 +55,8 @@ uint64_t ram_bytes() {
 // NI_EXPERT_STORE unset), before any load: the model's budget (flash_next_model_budget) less its GPU memory before the
 // store (the plan's weights without the smallest store, MTP head and prefill buffers) and init_store's 0.5 GB, then
 // q20::auto_store_size with this Mac's available memory now, its chip's RAM-share cap and the KV reserve serve's
-// init_store passes (the same NI_EXPERT_KV_POS).
+// init_store passes (the same plan's positions — min(planned context, the budget's 32K keep window) times the slots —
+// and the same NI_EXPERT_KV_POS override).
 q20::AutoStoreIn planned_store(const MemPlan& m, int slots, int ctx, size_t budget, bool apple10) {
   q20::AutoStoreIn in;
   const size_t mb = flash_next_model_budget(m, slots, ctx, budget);
@@ -64,7 +65,7 @@ q20::AutoStoreIn planned_store(const MemPlan& m, int slots, int ctx, size_t budg
   in.keep = size_t(1) << 29;
   in.left = mb > in.used + in.keep ? mb - in.used - in.keep : 0;
   in.ram = size_t(ram_bytes()), in.avail = q20::available_memory();
-  in.kv = q20::auto_store_kv(m.kv_per_pos);
+  in.kv = q20::auto_store_kv(m.kv_per_pos, ctx, slots);
   in.cap = q20::auto_store_cap(apple10);
   return in;
 }

@@ -174,8 +174,10 @@ static bool hc_precomb(bool q20_pack) {
   return v ? strcmp(v, "0") != 0 : q20_pack;
 }
 
-Qwen4Exp::Qwen4Exp(const std::string& dir, int prefill_chunk, size_t mem_budget, const Split* split)
-    : Qwen35(dir, prefill_chunk, NoLoad{}), mem_budget_arg_(mem_budget) {
+Qwen4Exp::Qwen4Exp(const std::string& dir, int prefill_chunk, size_t mem_budget, const Split* split, int planned_ctx,
+                   int planned_slots)
+    : Qwen35(dir, prefill_chunk, NoLoad{}), mem_budget_arg_(mem_budget), planned_ctx_(planned_ctx),
+      planned_slots_(planned_slots) {
   const Split& sp = split ? *split : process_split();
   lo_ = sp.lo;
   hi_ = sp.hi;  // (-1: load_config's, every layer)
@@ -795,8 +797,10 @@ void Qwen4Exp::init_store(const std::string& dir) {
     in.ram = size_t(ram);
     // The guard also reserves the KV caches the conversations to come allocate out of the same available memory
     // (STOREFIX: a 26-28 GB store beside 30-32 GB available aborted, max_pressure=4, once a 32K window's KV and the
-    // tree's RSS grew into the 4 GB headroom): NI_EXPERT_KV_POS positions, default 16384, 0 = the pre-fix size.
-    in.kv = q20::auto_store_kv(kv_bytes_per_pos());
+    // tree's RSS grew into the 4 GB headroom): the engine's start plan gives the positions — min(planned context, the
+    // budget's 32K keep window) times the slots (q20::auto_store_kv); a tool without a plan takes the default budget's
+    // keep window, 16384 of one conversation; NI_EXPERT_KV_POS overrides, 0 = the pre-fix size.
+    in.kv = q20::auto_store_kv(kv_bytes_per_pos(), planned_ctx_, planned_slots_);
     // NI_EXPERT_SETTLE_MS: how long the guard may wait in all for memory a process that just exited still holds
     // (default 10000; 0 = one sample); it stops once 3 s pass without 0.5 GB more available
     const int settle = env_ms("NI_EXPERT_SETTLE_MS", 10000);
